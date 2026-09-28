@@ -32,4 +32,6 @@ jobs:
         run: npm exec -- artillery run tests/load/smoke.yml
       - name: Stop the Compose stack
         if: always()
+        env:
+          JWT_SECRET: ci-only-secret-that-is-not-used-outside-this-job
         run: docker compose down --timeout 30
