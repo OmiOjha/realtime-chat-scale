@@ -1,0 +1,111 @@
+name: Deploy container stack
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Image tag to deploy (defaults to the selected commit SHA)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify deployment secrets are configured
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+        run: |
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ] || \
+             [ -z "$DEPLOY_SSH_KEY" ] || [ -z "$DEPLOY_KNOWN_HOSTS" ] || \
+             [ -z "$GHCR_USERNAME" ] || [ -z "$GHCR_READ_TOKEN" ]; then
+            echo "Configure all DEPLOY_* and GHCR_* repository secrets before deploying." >&2
+            exit 1
+          fi
+
+  publish:
+    needs: preflight
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Choose image tag
+        id: tag
+        env:
+          REQUESTED_TAG: ${{ inputs.image_tag }}
+        run: |
+          if [ -n "$REQUESTED_TAG" ]; then
+            if [[ ! "$REQUESTED_TAG" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+              echo "Image tag may contain only letters, numbers, dots, underscores, and hyphens." >&2
+              exit 1
+            fi
+            echo "image_tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "image_tag=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.api
+          push: true
+          tags: |
+            ghcr.io/omiojha/realtime-chat-scale/api:${{ steps.tag.outputs.image_tag }}
+            ghcr.io/omiojha/realtime-chat-scale/api:latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.web
+          push: true
+          tags: |
+            ghcr.io/omiojha/realtime-chat-scale/web:${{ steps.tag.outputs.image_tag }}
+            ghcr.io/omiojha/realtime-chat-scale/web:latest
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SSH credentials
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Copy Compose configuration
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" 'mkdir -p /opt/realtime-chat'
+          scp docker-compose.prod.yml "$DEPLOY_USER@$DEPLOY_HOST:/opt/realtime-chat/docker-compose.yml"
+      - name: Pull and restart services
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+          IMAGE_TAG: ${{ needs.publish.outputs.image_tag }}
+        run: |
+          printf '%s' "$GHCR_READ_TOKEN" | ssh "$DEPLOY_USER@$DEPLOY_HOST" \
+            "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd /opt/realtime-chat && APP_IMAGE_TAG='$IMAGE_TAG' docker compose pull && APP_IMAGE_TAG='$IMAGE_TAG' docker compose up -d --remove-orphans --wait --wait-timeout 180 && curl --fail --silent http://127.0.0.1:\${WEB_PORT:-8080}/health"

@@ -1,0 +1,12 @@
+.git
+.github
+.env
+.env.*
+node_modules
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+**/*.test.ts
+**/*.test.tsx
+npm-debug.log*

@@ -18,6 +18,8 @@ export interface Message {
   seq: number;
   body: string;
   createdAt: string;
+  deliveredTo: string[];
+  readBy: string[];
 }
 
 export interface Chat {

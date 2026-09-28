@@ -8,6 +8,7 @@ const environmentSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4000),
   MONGO_URI: z.string().min(1).default("mongodb://localhost:27017/realtime-chat"),
+  REDIS_URL: z.string().min(1).default("redis://localhost:6379"),
   JWT_SECRET: z.string().min(32, "JWT_SECRET must contain at least 32 characters"),
   CLIENT_ORIGIN: z.string().url().default("http://localhost:5173")
 });

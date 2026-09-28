@@ -15,6 +15,7 @@ const messageSchema = new Schema(
 );
 
 messageSchema.index({ chatId: 1, seq: 1 }, { unique: true });
+messageSchema.index({ chatId: 1, senderId: 1, clientMsgId: 1 }, { unique: true });
 messageSchema.index({ chatId: 1, createdAt: -1 });
 
 export const Message = model("Message", messageSchema);

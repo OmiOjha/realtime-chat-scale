@@ -1,0 +1,19 @@
+config:
+  target: http://127.0.0.1:8080
+  phases:
+    - duration: 15
+      arrivalRate: 1
+      name: Warm-up
+    - duration: 30
+      arrivalRate: 3
+      name: Light health-check traffic
+  defaults:
+    headers:
+      Accept: application/json
+scenarios:
+  - name: API through Nginx
+    flow:
+      - get:
+          url: /health
+          expect:
+            - statusCode: 200

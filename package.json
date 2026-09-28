@@ -1,6 +1,9 @@
 {
   "name": "realtime-chat-scale",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "workspaces": [
     "apps/api",
     "apps/web"
@@ -8,7 +11,8 @@
   "scripts": {
     "dev": "concurrently -n api,web -c blue,magenta \"npm run dev --workspace @chat/api\" \"npm run dev --workspace @chat/web\"",
     "build": "npm run build --workspace @chat/api && npm run build --workspace @chat/web",
-    "test": "npm test --workspace @chat/api",
+    "test": "npm test --workspace @chat/api && npm run test --workspace @chat/web",
+    "test:web": "npm test --workspace @chat/web",
     "typecheck": "npm run typecheck --workspace @chat/api && npm run typecheck --workspace @chat/web"
   },
   "devDependencies": {
