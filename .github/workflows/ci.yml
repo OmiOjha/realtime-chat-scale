@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install Redis for integration tests
+        run: sudo apt-get update && sudo apt-get install -y redis-server
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm audit --omit=dev
+      - name: Build and start the Compose stack
+        env:
+          JWT_SECRET: ci-only-secret-that-is-not-used-outside-this-job
+          CLIENT_ORIGIN: http://localhost:8080
+        run: docker compose up --build --wait -d
+      - name: Run a light Artillery smoke test through Nginx
+        run: npm exec -- artillery run tests/load/smoke.yml
+      - name: Stop the Compose stack
+        if: always()
+        env:
+          JWT_SECRET: ci-only-secret-that-is-not-used-outside-this-job
+        run: docker compose down --timeout 30
